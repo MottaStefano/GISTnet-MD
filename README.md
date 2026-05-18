@@ -2,7 +2,7 @@
 
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-12.1-ee4c2c.svg)](https://pytorch.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://opensource.org/licenses/GPL-2.0)
 
 **GISTnet-MD** is an advanced Deep Learning pipeline built on **PyTorch Geometric**. It is designed to train Spatiotemporal Graph Neural Networks (GNNs) capable of recognizing complex functional or conformational states directly from raw Molecular Dynamics (MD) trajectories.
 

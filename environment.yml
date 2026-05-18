@@ -1,0 +1,30 @@
+name: gistnet-md
+channels:
+  - pytorch
+  - nvidia
+  - pyg
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  # Deep Learning & PyTorch Geometric
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - pyg
+  - pytorch-scatter
+  - pytorch-sparse
+  - pytorch-cluster
+  # Explainable AI
+  - captum
+  # MD e Biofisica
+  - mdtraj
+  - biopython
+  # Data Science & Plotting
+  - numpy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - umap-learn

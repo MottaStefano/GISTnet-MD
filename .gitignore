@@ -1,0 +1,16 @@
+# ==========================================
+# GISTnet-MD .gitignore
+# ==========================================
+
+# ------------------------------------------
+# 1. File di Sistema Python e Ambienti Virtuali
+# ------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+venv/
+env/
+.venv/
+.ipynb_checkpoints/

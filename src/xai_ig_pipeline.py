@@ -32,10 +32,11 @@ def get_parser(show_debug=None, show_advanced=None):
     ig_group = parser.add_argument_group('Integrated Gradients Parameters', 'Configure the interpretability algorithm.')
     ig_group.add_argument("--ig_steps", type=int, default=10,
                           help="Number of interpolation steps for the baseline approximation (higher = more accurate but slower).")
-    ig_group.add_argument("--baseline", type=str, default="thermodynamic_mean", choices=["thermodynamic_mean", "zero_edges", "real_background_windows"],
-                          help="Metodo di baseline. 'thermodynamic_mean': stati medi di altre classi; 'zero_edges': RBF iniziali nulli; 'real_background_windows': Expected Gradients su Medoidi reali.")
-    ig_group.add_argument("--num_baselines", type=int, default=5,
-                          help="Numero K di window di background da estrarre (Medoidi) per la baseline 'real_background_windows'.")
+    ig_group.add_argument("--N_baseline_medoids", type=int, default=5,
+                          help="Number of background windows (Medoids) to extract per class for the expected_gradients baseline calculation.")
+    adv_group = parser.add_argument_group('Advanced Options', 'Advanced configuration flags (use --advanced-help to view).')
+    adv_group.add_argument("--baseline", type=str, default="expected_gradients", choices=["thermodynamic_mean", "zero_edges", "expected_gradients"],
+                          help="Metodo di baseline. 'thermodynamic_mean': stati medi di altre classi; 'zero_edges': RBF iniziali nulli; 'expected_gradients': Expected Gradients su Medoidi reali." if show_advanced else argparse.SUPPRESS)
 
     vmd_group = parser.add_argument_group('Dashboard Export Options', 'Settings for spatial and temporal data generation.')
     vmd_group.add_argument("--remove_gmls", action="store_true",
@@ -82,7 +83,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # FUNZIONI PIPELINE (Generazione -> Esportazione)
 # =============================================================================
 
-def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline_type, num_baselines):
+def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline_type, N_baseline_medoids):
     logger.info("Initializing Model and Dataset for IG Graph Generation...")
 
     val_groups = config.get('val_groups', [])
@@ -116,9 +117,9 @@ def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline
         if not baselines_per_class:
             logger.error("Failed to compute class-specific baselines from training set.")
             return False
-    elif baseline_type == "real_background_windows":
-        logger.info(f"Extracting {num_baselines} Medoid baselines per class from training set...")
-        medoids_per_class = select_medoid_baselines(config, full_model, DEVICE, num_baselines=num_baselines)
+    elif baseline_type == "expected_gradients":
+        logger.info(f"Extracting {N_baseline_medoids} Medoid baselines per class from training set...")
+        medoids_per_class = select_medoid_baselines(config, full_model, DEVICE, num_baselines=N_baseline_medoids)
         if not medoids_per_class:
             logger.error("Failed to extract Medoid baselines.")
             return False
@@ -177,7 +178,7 @@ def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline
                 baseline_type=baseline_type, steps=ig_steps, device=DEVICE
             )
 
-        elif baseline_type == "real_background_windows":
+        elif baseline_type == "expected_gradients":
             # Contrasto contro i Medoidi di tutte le altre classi
             other_classes = [c for c in medoids_per_class.keys() if c != target]
             if not other_classes:
@@ -454,7 +455,7 @@ def main():
         os.makedirs(vmd_dir, exist_ok=True)
 
         # 1. GENERATE GMLS
-        ds = run_ig_generation(config, model_dir, gml_dir, logger, args.ig_steps, args.baseline, args.num_baselines)
+        ds = run_ig_generation(config, model_dir, gml_dir, logger, args.ig_steps, args.baseline, args.N_baseline_medoids)
 
         # 2. VMD EXPORT
         if ds:

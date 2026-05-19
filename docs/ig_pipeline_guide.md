@@ -10,10 +10,10 @@ It achieves this by applying the **Integrated Gradients (IG)** mathematical algo
 
 Integrated Gradients works by continuously interpolating a sample from a "blank" neutral state (Baseline) up to its actual 100% real structural state, accumulating the gradients (the network's reaction) along the way.
 
-1. **The Baselines**:
-   - `thermodynamic_mean`: The script automatically sweeps your entire Training Set to compute a global "Mean Centroid Baseline". It calculates the average radial distance (RBF) for every edge that appears consistently across all the training simulations.
-   - `real_background_windows`: Extracts a specific number (`--num_baselines`) of Medoid baselines from the training set, computing Expected Gradients over them.
-   - `zero_edges`: A simple baseline where initial RBF distances are completely nullified.
+1. **The Baseline (Expected Gradients)**:
+   The script calculates the "Expected Gradients" by extracting a specific number (`--N_baseline_medoids`) of representative structural states (Medoids) from your entire Training Set. It then computes the Expected Gradients over them to accurately approximate the integral.
+   
+   *(Note: The advanced help menu contains flags to switch to other legacy baseline methods. Their results are less reliable and their use is strongly discouraged; they are retained solely for internal testing purposes).*
 
 2. **The Interpolation Steps (`--ig_steps`)**:
    During the analysis of a validation frame, the algorithm morphs the graph from the topological Baseline to the actual current geometry of the frame in *N* incremental discrete steps. Higher steps yield better integral approximations at the cost of computation time.
@@ -69,8 +69,9 @@ Below is the complete list of parameters parsed by the IG pipeline:
 | `--out_dir` | `Str` | `./xai_ig_results` | Main output directory boundary. Final results will be automatically organized into subfolders matching their respective validation groups. |
 | **Integrated Gradients Parameters** | | | |
 | `--ig_steps` | `Int` | `10` | The number of discrete interpolation steps used to mathematically approximate the integral from the Baseline to the sample. |
-| `--baseline` | `Str` | `thermodynamic_mean` | Baseline method. Options: `thermodynamic_mean` (mean states of classes), `zero_edges` (null initial RBFs), `real_background_windows` (Expected Gradients on Medoids). |
-| `--num_baselines` | `Int` | `5` | Number of background windows (Medoids) to extract per class when using the `real_background_windows` baseline. |
+| `--N_baseline_medoids` | `Int` | `5` | Number of background windows (Medoids) to extract per class for the Expected Gradients calculation. |
+| **Advanced Options** *(Requires --advanced-help)* | | | |
+| `--baseline` | `Str` | `expected_gradients` | Legacy flag. Contains other baseline methods kept strictly for testing purposes. Use is discouraged. |
 | **Dashboard Export Options**| | | |
 | `--remove_gmls` | `Flag` | `False` | Remove the intermediate `.gml` graph files after exporting to VMD formats. By default, they are kept as they are required by the PyMOL generator. |
 
@@ -91,7 +92,7 @@ xai_ig_results/
     │   ├── window_000001_WT_pred_WT_grp_3.gml
     │   └── ...
     │
-    └── vmd_data/                       <-- Formatted numerical arrays for fast Dashboard injection.
+    └── vmd_data/                       <-- Formatted numerical arrays for time-series analysis.
         └── WT/
             ├── WT_WT_grp3_xai_spatial.dat
             └── WT_WT_grp3_xai_temporal.csv
@@ -99,14 +100,16 @@ xai_ig_results/
 
 ### Understanding the VMD / Data Formats
 
-The final translation phase of the script (VMD Extraction) converts the heavy, complex `.gml` networks into highly optimized mathematical arrays ready to be imported into molecular viewers (like VMD's Data Importer or custom Python notebooks).
+The final translation phase of the script converts the heavy, complex .gml networks into highly optimized mathematical arrays. These files are specifically structured to enable dynamic, time-resolved visual analysis in molecular viewers (such as VMD) or custom parsing via Python notebooks.
+
+⚠️ Note on VMD Visualization: While the pipeline successfully generates these optimized data arrays, a dedicated automated tool/integration to natively read and render this dynamic time-series data inside VMD is currently in development and not yet available in this public release.
 
 1. **`*_xai_spatial.dat`**:
    This is a space-separated data file (matrix). 
    - **Rows**: Represent the simulation frames (Time).
    - **Columns**: Represent the internal biological residues (Amino Acids).
    - **Values**: The numeric Saliency / Importance extracted by the Integrated Gradients. If a specific index `[Frame 50, Residue 12]` has a high positive value, it means that residue was structurally crucial for the network *at that exact moment* in time. 
-   - **Header**: Contains metadata to auto-initialize viewers (`# META [TotalFrames] [NumResidues] [GlobalMaxSaliency] 0`).
+   - **Header**: Contains metadata for initialization (`# META [TotalFrames] [NumResidues] [GlobalMaxSaliency] 0`).
 
 2. **`*_xai_temporal.csv`**:
    This tracks the global metrics of the system, collapsing spatial dimensions to focus purely on time.

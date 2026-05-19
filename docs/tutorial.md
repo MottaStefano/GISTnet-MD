@@ -104,11 +104,11 @@ python GISTnet-MD/xai_ig_pipeline.py \
   --model_dirs training/valrep_* \
   --out_dir ./analysis_IG \
   --ig_steps 15 \
-  --baseline thermodynamic_mean
+  --N_baseline_medoids 5
 ```
 
 **What happens here?**
-The script loops through all 5 cross-validation models. It compares the validation frames against a "Thermodynamic Mean Baseline" (the average structure of the protein) to figure out which interactions are unique to the WT or the Mutant.
+The script loops through all 5 cross-validation models. It calculates "Expected Gradients" by extracting 5 representative structural states (Medoids, via `--N_baseline_medoids 5`) from the training set, and uses them as a baseline to figure out which interactions are unique to the WT or the Mutant.
 The results are saved as `.gml` graph files and `.dat/.csv` numerical matrices.
 
 ---
@@ -140,21 +140,6 @@ pymol
 @./pymol_viz/global_view_xai.pml
 ```
 You will see the protein colored from **Magenta (Negative/Penalty)** to **Green (Positive/Hallmark)**, with 3D cylinders connecting the most important residues.
-
----
-
-## Phase 5: Dynamic VMD Dashboard
-
-To observe how the network's confidence and spatial attributions fluctuate dynamically *during* the simulation, you can use the VMD plugin.
-
-1. Open **VMD** and load your standard trajectory (`.pdb` and `.xtc`).
-2. Open the Tk Console (`Extensions -> Tk Console`).
-3. Load the dashboard:
-   ```tcl
-   source vmd_plugin/vmd_xai_dashboard.tcl
-   ```
-4. Using the GUI, load the `*_xai_spatial.dat` and `*_xai_temporal.csv` files generated during Phase 3 (located in `./analysis_IG/valrep_1/vmd_data/WT/`).
-5. Play the trajectory! The protein will dynamically change colors based on the network's frame-by-frame attention.
 
 ---
 **Congratulations!** You have successfully completed an end-to-end analysis using GISTnet-MD. For deeper dives into specific parameters, refer to the individual guides in the `docs/` folder.

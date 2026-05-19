@@ -103,7 +103,7 @@ python GISTnet-MD/xai_ig_pipeline.py \
   --model_dirs training/valrep_* \
   --out_dir ./analysis_IG \
   --ig_steps 10 \
-  --baseline thermodynamic_mean
+  --N_baseline_medoids 5
 ```
 📚 **Read the full guide:** [`docs/ig_pipeline_guide.md`](docs/ig_pipeline_guide.md)
 

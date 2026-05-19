@@ -1,4 +1,4 @@
-# 🧬 GISTnet-MD: Graph-Informed Spatiotemporal Networks for Molecular Dynamics
+# 🧬 GISTnet-MD: Graph Invariant SpatioTemporal Network for Molecular Dynamics
 
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-12.1-ee4c2c.svg)](https://pytorch.org/)

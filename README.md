@@ -22,8 +22,8 @@ We strongly recommend using `conda` to manage the environment, as it seamlessly 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/Antigravity_GISTnet-MD.git
-cd Antigravity_GISTnet-MD
+git clone https://github.com/MottaStefano/GISTnet-MD
+cd GISTnet-MD
 
 # 2. Create the conda environment from the provided file
 conda env create -f environment.yml

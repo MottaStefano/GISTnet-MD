@@ -20,12 +20,12 @@ Your data should be organized like this:
 ```text
 MD_simulations/
 ├── WT/
-│   ├── complex-dry.pdb     <-- Topology (without water/ions)
+│   ├── reference.pdb     <-- Topology (without water/ions)
 │   ├── rep_1.xtc           <-- Replica 1 trajectory
 │   ├── rep_2.xtc           
 │   └── ... rep_5.xtc
 └── L99A/
-    ├── complex-dry.pdb
+    ├── reference.pdb
     ├── rep_1.xtc
     └── ... rep_5.xtc
 ```
@@ -45,7 +45,7 @@ mkdir -p preprocessed_graphs/WT preprocessed_graphs/L99A
 for i in {1..5}; do
   python GISTnet-MD/preprocess.py \
     --xtc MD_simulations/WT/rep_${i}.xtc \
-    --pdb MD_simulations/WT/complex-dry.pdb \
+    --pdb MD_simulations/WT/reference.pdb \
     --resid 1-98,100-164 \
     --out_dir preprocessed_graphs/WT/WT_rep_${i} \
     --prefix WT_rep_${i} \
@@ -57,7 +57,7 @@ done
 for i in {1..5}; do
   python GISTnet-MD/preprocess.py \
     --xtc MD_simulations/L99A/rep_${i}.xtc \
-    --pdb MD_simulations/L99A/complex-dry.pdb \
+    --pdb MD_simulations/L99A/reference.pdb \
     --resid 1-98,100-164 \
     --out_dir preprocessed_graphs/L99A/L99A_rep_${i} \
     --prefix L99A_rep_${i} \
@@ -120,7 +120,7 @@ Looking at raw matrices is difficult. We will aggregate the mathematical salienc
 ```bash
 python GISTnet-MD/xai_pymol_generator.py \
   --ig_results_dir ./analysis_IG \
-  --pdb_template MD_simulations/WT/complex-dry.pdb \
+  --pdb_template MD_simulations/WT/reference.pdb \
   --out_dir ./pymol_viz \
   --resid 1-98,100-164 \
   --confidence_cut 0.8 \

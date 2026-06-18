@@ -36,7 +36,7 @@ MD_simulations/
 
 The first step is to convert the physical coordinates of the `.xtc` trajectories into PyTorch Geometric graphs. In these graphs, nodes are amino acids, and edges represent spatial proximity.
 
-We will use the **Center of Mass (`com`)** representation and a **10.0 Å cutoff**. We also select a specific range of residues (`1-98,100-164`) to ignore flexible, noisy tails.
+We will use the **Center of Mass (`com`)** representation and a **10.0 Å cutoff**. We also select a specific range of residues (`1-98,100-164`) to ignore the mutated residue which inclusion would make the identification of the state trivial.
 
 ```bash
 mkdir -p preprocessed_graphs/WT preprocessed_graphs/L99A

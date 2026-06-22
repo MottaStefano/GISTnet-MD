@@ -33,7 +33,7 @@ The generator uses a custom divergent color scale strictly clamped between `-100
 
 ## 📂 Output Directory Ecosystem & Files
 
-When you run the script, it populates your `--out_dir` (default: `./pymol_global_viz`) with a synchronized ecosystem of files. You only ever need to interact with the Master Script.
+When you run the script, it populates your `--out_dir` (default: `./pymol_global_viz`) with a synchronized ecosystem of files. It generates a global overview across all data, but also creates class-specific subdirectories so you can isolate the features belonging exclusively to the Wild-Type or the Mutant.
 
 ```text
 pymol_global_viz/
@@ -51,6 +51,11 @@ pymol_global_viz/
 │
 └── global_view_xai.pml              <-- THE MASTER SCRIPT (Double click or run this in PyMOL).
 ```
+
+### Understanding the Multi-Class Outputs
+The Global Level (`global_*`): These files aggregate the absolute importance values across all simulated states. This gives you an immediate bird's-eye view of where the network focused its attention globally during the cross-validation.
+
+The Class-Specific Subfolders (`Val_WT/`, `Val_L99A/`, etc.): The script automatically detects your data classes and splits the results into dedicated subdirectories. Inside these, the saliency scores and edges are isolated and recalculated only for the frames belonging to that specific class.
 
 ### How to visualize the results
 You only need to open PyMOL and run the Master Script: `@pymol_global_viz/global_view_xai.pml`

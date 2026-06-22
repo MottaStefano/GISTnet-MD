@@ -1,12 +1,16 @@
-# 🧬 GISTnet-MD: Graph-Informed Spatiotemporal Networks for Molecular Dynamics
+# GISTnet-MD: Graph Invariant SpatioTemporal Network for Molecular Dynamics
 
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-12.1-ee4c2c.svg)](https://pytorch.org/)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://opensource.org/licenses/GPL-2.0)
 
+<img align="left" width="200" height="201" alt="image" src="https://github.com/user-attachments/assets/f6097dbd-ae93-4414-aa36-8a26e4778ad7" style="margin-right: 15px;" />
+
 **GISTnet-MD** is an advanced Deep Learning pipeline built on **PyTorch Geometric**. It is designed to train Spatiotemporal Graph Neural Networks (GNNs) capable of recognizing complex functional or conformational states directly from raw Molecular Dynamics (MD) trajectories.
 
 Historically, analyzing MD simulations required the manual definition of collective variables or classical dimensionality reduction techniques. GISTnet-MD introduces a paradigm shift: **automated, physics-informed pattern extraction** using Deep Learning, followed by a rigorous **Explainable AI (xAI)** framework (Integrated Gradients) to physically interpret the network's decisions at the atomic level.
+
+<br clear="left" />
 
 ---
 
@@ -22,8 +26,8 @@ We strongly recommend using `conda` to manage the environment, as it seamlessly 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/Antigravity_GISTnet-MD.git
-cd Antigravity_GISTnet-MD
+git clone https://github.com/MottaStefano/GISTnet-MD
+cd GISTnet-MD
 
 # 2. Create the conda environment from the provided file
 conda env create -f environment.yml

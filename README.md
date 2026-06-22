@@ -139,4 +139,4 @@ For a deep dive into hyperparameters, architectural details, and advanced optimi
 3. [Integrated Gradients Pipeline Guide (`ig_pipeline_guide.md`)](docs/ig_pipeline_guide.md)
 4. [PyMOL Visualization Generator Guide (`pymol_generator_guide.md`)](docs/pymol_generator_guide.md)
 
-A detailed tutorial can also be found: [Tutorial](docs/tutorial.md)
+A detailed tutorial can also be found: [Tutorial](tutorial/tutorial_t4-lysozyme.md)

@@ -126,61 +126,25 @@ def integrated_gradients_rbf_directional(wrapper, data_batch, target_class_index
     V_total = data_batch.num_nodes
     N_total = data_batch.num_graphs
 
-    from types import SimpleNamespace
-
-    # Processamento IG a Blocchi (Batches)
-    for i in range(0, len(alpha_steps), ig_batch_size):
-        batch_alphas = alpha_steps[i:i + ig_batch_size]
-        B = len(batch_alphas)
-
-        # 1. Costruiamo un "Mega-Batch" manualmente per evitare bug di `to_data_list()` su grafi modificati con i ghost_edges
-        big_batch = SimpleNamespace()
-
-        if data_batch.x.dim() == 1:
-            big_batch.x = data_batch.x.repeat(B)
-        else:
-            big_batch.x = data_batch.x.repeat(B, 1)
-
-        if hasattr(data_batch, 'x_dihe') and data_batch.x_dihe is not None:
-            big_batch.x_dihe = data_batch.x_dihe.repeat(B, 1)
-
-        edge_indices = []
-        for b_idx in range(B):
-            edge_indices.append(data_batch.edge_index + b_idx * V_total)
-        big_batch.edge_index = torch.cat(edge_indices, dim=1)
-
-        batches = []
-        for b_idx in range(B):
-            batches.append(data_batch.batch + b_idx * N_total)
-        big_batch.batch = torch.cat(batches, dim=0)
-
-        # 2. Re-espandiamo le RBF (Baseline e Target) in profondità (B volte)
-        big_target = target_rbf_feat.repeat(B, 1)
-        big_baseline = baseline_rbf_feat.repeat(B, 1)
-
-        # 3. Adattiamo l'alpha in modo che diventi un vettore parallelo per ogni Edge [B*E_total, 1]
-        alpha_expanded = batch_alphas.repeat_interleave(E_total).unsqueeze(-1)
-
-        # 4. Interpolazione Lineare Multi-Step e Tracciamento dei Gradienti
-        step_rbf = big_baseline + alpha_expanded * (big_target - big_baseline)
+    # Processamento IG Iterativo (Zero Mega-Batches)
+    for alpha in alpha_steps:
+        # 1. Interpolazione Lineare Step Singolo
+        step_rbf = baseline_rbf_feat + alpha * (target_rbf_feat - baseline_rbf_feat)
         step_rbf.requires_grad_(True)
 
-        logits = wrapper(step_rbf, big_batch)
+        # 2. Forward Pass sulla topologia originale (nessuna duplicazione di memoria)
+        logits = wrapper(step_rbf, data_batch)
 
-        # 5. Isoliamo il Logit Score richiesto per ognuno dei B passi calcolati
-        logical_batch_size = logits.shape[0] // B
-        logits_reshaped = logits.view(B, logical_batch_size, -1)
-
-        target_scores = logits_reshaped[:, :, target_class_index]
-        mean_scores = logits_reshaped.mean(dim=2)
+        # 3. Isoliamo il Logit Score per il target
+        target_scores = logits[:, target_class_index]
+        mean_scores = logits.mean(dim=1)
         score = (target_scores - mean_scores).sum()
 
+        # 4. Backward e Tracciamento dei Gradienti
         wrapper.zero_grad()
         score.backward()
 
-        # 6. Ricostruiamo la dimensionalità originale (E_total, F) e sommiamo allo stack globale
-        grad_reshaped = step_rbf.grad.view(B, E_total, -1)
-        grads_rbf_accum += grad_reshaped.sum(dim=0)
+        grads_rbf_accum += step_rbf.grad
 
     avg_rbf_grads = grads_rbf_accum / steps
     delta_rbf = (target_rbf_feat - baseline_rbf_feat)

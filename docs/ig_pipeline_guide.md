@@ -53,7 +53,33 @@ python xai_ig_pipeline.py --config "my_xai_folder/ig_pipeline_config.txt"
 
 # Selectively overwriting loaded parameters directly from the terminal prompt:
 python xai_ig_pipeline.py --config "my_xai_folder/ig_pipeline_config.txt" --ig_steps 50
+
+# Resuming an interrupted generation (skipping already existing files):
+python xai_ig_pipeline.py --config "my_xai_folder/ig_pipeline_config.txt" --restart
+
+# Running purely on new unseen data (Inference Mode):
+python xai_ig_pipeline.py --config "my_xai_folder/ig_pipeline_config.txt" --inference_dirs "path/to/new_data"
 ```
+
+---
+
+## 🕵️ Inference Mode
+
+The XAI pipeline now allows analyzing completely new, unseen (unlabelled) Molecular Dynamics simulations using the `--inference_dirs` argument.
+
+### 1. Data Preparation
+You must point the `--inference_dirs` flag directly to folders containing spatiotemporal graphs (`.pt` files) **already preprocessed** via the `preprocess.py` script.
+You can pass multiple paths or subfolders if you have several replicas to test (e.g., `--inference_dirs data/new_run1 data/new_run2`).
+
+### 2. Baseline Behavior
+During inference, the true class is unknown. Therefore, the *saliency* (IG) calculation lacks a fixed, singular target.
+The system will first extract the *Baseline* distributions directly from the **original training set** (as stored in `config.json`). During calculation, the explanation (IG) will be dynamically computed by measuring the input's deviation against the baselines of the *alternative* classes relative to the model's predicted class. In other words, the algorithm will explain *why* the model predicted class X instead of the others.
+
+### 3. PyMOL Export (`xai_pymol_generator.py`)
+The networks produce `.gml` files that store the true class as `unknown`. 
+During visualization with `xai_pymol_generator.py`, the system will auto-detect these files and apply adaptive filtering:
+- **Standard Data (Validation)**: Generates an aggregated PyMOL script, discarding graphs where the model made an incorrect prediction and filtering based on the `confidence_true_class`.
+- **Inference Data**: Skips the correctness check (since we assume the true class does not exist), filters based on the `confidence_pred_class` (the model's confidence in its own prediction), and generates PyMOL scripts dynamically grouped by the **predicted** class.
 
 ---
 
@@ -64,6 +90,8 @@ Below is the complete list of parameters parsed by the IG pipeline:
 | Keyword | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
 | **Input and Output** | | | |
+| `--inference_dirs` | `Str list` | `None` | Optional paths to new simulation directories for pure inference. If provided, the script ignores validation groups and runs prediction+XAI on these new data. |
+| `--restart` | `Flag` | `False` | Skip already existing .gml files to resume an interrupted generation. |
 | `-c`, `--config` | `Str` | `None` | Optional text file to load configuration from, formatted as `key=value`. |
 | `--model_dirs` | `Str list` | *Required* | Space-separated list of training directories containing `best_linear_model.pt` and `config.json` (e.g., `results_hybrid/valrep_1`). |
 | `--out_dir` | `Str` | `./xai_ig_results` | Main output directory boundary. Final results will be automatically organized into subfolders matching their respective validation groups. |
@@ -71,6 +99,7 @@ Below is the complete list of parameters parsed by the IG pipeline:
 | `--ig_steps` | `Int` | `10` | The number of discrete interpolation steps used to mathematically approximate the integral from the Baseline to the sample. |
 | `--N_baseline_medoids` | `Int` | `5` | Number of background windows (Medoids) to extract per class for the Expected Gradients calculation. |
 | **Advanced Options** *(Requires --advanced-help)* | | | |
+| `--vram_mode` | `Str` | `standard` | Optimization mode for VRAM usage. Set to `memory_saving` for very large systems to drastically reduce peak VRAM using mixed precision, trading off a slight reduction in computation speed. |
 | `--baseline` | `Str` | `expected_gradients` | Legacy flag. Contains other baseline methods kept strictly for testing purposes. Use is discouraged. |
 | **Dashboard Export Options**| | | |
 | `--remove_gmls` | `Flag` | `False` | Remove the intermediate `.gml` graph files after exporting to VMD formats. By default, they are kept as they are required by the PyMOL generator. |

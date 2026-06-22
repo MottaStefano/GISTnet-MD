@@ -25,6 +25,7 @@ class HybridTrainer:
         self.scheduler = scheduler
         self.scaler = scaler or GradScaler()
         self.args = args
+        self.autocast_dtype = torch.bfloat16 if getattr(self.args, 'vram_mode', 'standard') == 'memory_saving' else (torch.float16 if torch.cuda.is_available() else torch.float32)
 
         self.best_val_metric = -1.0
         self.best_loss_at_best_metric = float('inf')
@@ -60,7 +61,7 @@ class HybridTrainer:
                 with torch.no_grad():
                     for mb in accumulated_batches:
                         mb = mb.to(self.device)
-                        with autocast(device_type=self.device.type):
+                        with autocast(device_type=self.device.type, dtype=self.autocast_dtype):
                             out = self.model(mb)
                         cached_outputs.append(out)
 
@@ -71,7 +72,7 @@ class HybridTrainer:
                 full_groups = torch.cat(accumulated_groups).to(self.device)
                 full_shared = torch.cat(accumulated_shared_names).to(self.device) if accumulated_shared_names[0] is not None else None
 
-                with autocast(device_type=self.device.type):
+                with autocast(device_type=self.device.type, dtype=self.autocast_dtype):
                     if self.args.contrastive == 'none':
                         loss = self.criterion(full_outputs, full_labels)
                     else:
@@ -88,7 +89,7 @@ class HybridTrainer:
                     end_idx = start_idx + mb_size
                     mb_grads = upstream_grads[start_idx:end_idx]
 
-                    with autocast(device_type=self.device.type):
+                    with autocast(device_type=self.device.type, dtype=self.autocast_dtype):
                         mb_out = self.model(mb)
                     mb_out.backward(mb_grads)
                     start_idx = end_idx
@@ -120,7 +121,7 @@ class HybridTrainer:
                 labels = labels.to(self.device)
                 groups = groups.to(self.device)
 
-                with autocast(device_type=self.device.type):
+                with autocast(device_type=self.device.type, dtype=self.autocast_dtype):
                     out = self.model(batched_data)
 
                     if self.args.contrastive == 'none':
@@ -155,14 +156,14 @@ class HybridTrainer:
             if train_ds_for_knn is not None:
                 tr_embs, tr_lbls = [], []
                 from torch.utils.data import DataLoader
-                temp_loader = DataLoader(train_ds_for_knn, batch_size=64, collate_fn=collate_windows, shuffle=True)
+                temp_loader = DataLoader(train_ds_for_knn, batch_size=self.args.micro_batch_size, collate_fn=collate_windows, shuffle=True)
                 count = 0
                 self.model.eval()
                 with torch.no_grad():
                     # Aggiunto `_`
                     for batched_data, labels, _, _, _ in temp_loader:
                         batched_data = batched_data.to(self.device)
-                        with autocast(device_type=self.device.type):
+                        with autocast(device_type=self.device.type, dtype=self.autocast_dtype):
                             embs = self.model(batched_data)
                         tr_embs.append(embs.float().cpu().numpy())
                         tr_lbls.append(labels.numpy())
@@ -191,8 +192,28 @@ class HybridTrainer:
             scheduler_cosine = CosineAnnealingLR(self.optimizer, T_max=decay_epochs, eta_min=self.args.scheduler_min_lr)
 
         best_model_path = os.path.join(self.args.out_dir, "best_model.pt")
+        checkpoint_path = os.path.join(self.args.out_dir, "checkpoint_latest.pt")
 
-        for epoch in range(1, self.args.epochs + 1):
+        start_epoch = 1
+
+        if getattr(self.args, 'restart', False) and os.path.exists(checkpoint_path):
+            self.logger.info(f"Restart flag enabled. Loading checkpoint from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            self.best_val_metric = checkpoint.get('best_val_metric', -1.0)
+            self.best_loss_at_best_metric = checkpoint.get('best_loss_at_best_metric', float('inf'))
+            self.patience_counter = checkpoint.get('patience_counter', 0)
+            self.history = checkpoint.get('history', {'train_loss': [], 'val_loss': [], 'val_acc': []})
+            
+            if self.args.use_scheduler:
+                if 'scheduler_warmup_state_dict' in checkpoint and scheduler_warmup:
+                    scheduler_warmup.load_state_dict(checkpoint['scheduler_warmup_state_dict'])
+                if 'scheduler_cosine_state_dict' in checkpoint and scheduler_cosine:
+                    scheduler_cosine.load_state_dict(checkpoint['scheduler_cosine_state_dict'])
+
+        for epoch in range(start_epoch, self.args.epochs + 1):
             avg_train_loss = self.train_epoch(train_loader, epoch)
             self.history['train_loss'].append(avg_train_loss)
 
@@ -241,6 +262,20 @@ class HybridTrainer:
                 last_va = self.history['val_acc'][-1] if len(self.history['val_acc']) > 0 else np.nan
                 self.history['val_loss'].append(last_vl)
                 self.history['val_acc'].append(last_va)
+
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'best_val_metric': self.best_val_metric,
+                'best_loss_at_best_metric': self.best_loss_at_best_metric,
+                'patience_counter': self.patience_counter,
+                'history': self.history
+            }
+            if self.args.use_scheduler:
+                checkpoint['scheduler_warmup_state_dict'] = scheduler_warmup.state_dict()
+                checkpoint['scheduler_cosine_state_dict'] = scheduler_cosine.state_dict()
+            torch.save(checkpoint, checkpoint_path)
 
             self.logger.info(f"Ep {epoch}: Train Loss {avg_train_loss:.4f} | {metric_str}")
 

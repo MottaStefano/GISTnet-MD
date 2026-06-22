@@ -135,49 +135,126 @@ def get_color_gradient(val, max_val, low_color=(1.0, 0.0, 1.0), mid_color=(0.6, 
 # 2. PARSING & TRUE CLASS ALIGNMENT
 # =============================================================================
 
+import re
+import os
+from tqdm import tqdm
+
+# Pre-compiliamo le regex fuori dal ciclo per una velocità estrema (livello C)
+RE_TRUE_LABEL = re.compile(r'true_label\s+["\']?(\d+)["\']?')
+RE_PRED_LABEL = re.compile(r'predicted_label\s+["\']?(\d+)["\']?')
+RE_CONF_TRUE  = re.compile(r'confidence_true_class\s+["\']?([-\d\.e]+)["\']?')
+RE_CONF_PRED  = re.compile(r'prediction_confidence\s+["\']?([-\d\.e]+)["\']?')
+RE_CONF_INF   = re.compile(r'confidence_pred_class\s+["\']?([-\d\.e]+)["\']?')
+
+# [^\]]* assicura di cercare 'importance' solo all'interno di quello specifico blocco nodo/arco
+RE_NODE = re.compile(r'node\s*\[\s*id\s+(\d+)[^\]]*?importance\s+["\']?([-\d\.e]+)["\']?')
+RE_EDGE = re.compile(r'edge\s*\[\s*source\s+(\d+)\s+target\s+(\d+)[^\]]*?importance\s+["\']?([-\d\.e]+)["\']?')
+
 def parse_gml_files(file_list, confidence_cutoff=0.0):
     """
-    Reads GML files and applies True Class Alignment.
+    Ultra-Fast GML parser using C-level regex engines.
     """
-    node_accumulator = {}
-    edge_accumulator = {}
-    valid_samples = 0
+    grouped_nodes = {}
+    grouped_edges = {}
+    valid_samples = {}
     skipped_samples = 0
 
-    print("\n[MODE] GLOBAL CONSENSUS: Analyzing graphs and aligning gradients to the true class.")
+    print("\nAnalyzing graphs and applying Inference/Validation grouping logic...")
 
     for fpath in tqdm(file_list, desc="Parsing GMLs"):
         try:
-            G = nx.read_gml(fpath)
+            fname = os.path.basename(fpath)
+            is_inference = '_unknown_pred_' in fname
 
-            conf = G.graph.get('confidence_true_class', G.graph.get('prediction_confidence', G.graph.get('confidence', 0.0)))
+            # Legge tutto il file in RAM in un solo colpo (rapidissimo per file da pochi MB)
+            with open(fpath, 'r') as f:
+                content = f.read()
+
+            # --- 1. METADATA PARSING ---
+            if not is_inference:
+                m_true = RE_TRUE_LABEL.search(content)
+                m_pred = RE_PRED_LABEL.search(content)
+
+                if not m_true or not m_pred:
+                    continue
+                true_label, pred_label = int(m_true.group(1)), int(m_pred.group(1))
+
+                if true_label != pred_label:
+                    skipped_samples += 1
+                    continue
+
+                m_conf = RE_CONF_TRUE.search(content) or RE_CONF_PRED.search(content)
+                conf = float(m_conf.group(1)) if m_conf else 0.0
+                group_key = f"Val_TrueClass_{true_label}"
+            else:
+                m_pred = RE_PRED_LABEL.search(content)
+                if not m_pred:
+                    continue
+                pred_label = int(m_pred.group(1))
+
+                m_conf = RE_CONF_INF.search(content)
+                conf = float(m_conf.group(1)) if m_conf else 0.0
+                group_key = f"Inf_PredClass_{pred_label}"
+
             if conf < confidence_cutoff:
                 skipped_samples += 1
                 continue
 
+            global_key = "Global"
+            if group_key not in grouped_nodes:
+                grouped_nodes[group_key] = {}
+                grouped_edges[group_key] = {}
+                valid_samples[group_key] = 0
+
+            if global_key not in grouped_nodes:
+                grouped_nodes[global_key] = {}
+                grouped_edges[global_key] = {}
+                valid_samples[global_key] = 0
+
+            valid_samples[group_key] += 1
+            valid_samples[global_key] += 1
             multiplier = 1.0
 
-            valid_samples += 1
+            # --- 2. NODES PARSING ---
+            # Trova tutti i nodi nel file alla velocità del C
+            for match in RE_NODE.finditer(content):
+                idx = int(match.group(1))
+                val = float(match.group(2)) * multiplier
 
-            # Node accumulation with multiplier
-            for node_id, attrs in G.nodes(data=True):
-                val = attrs.get('importance', 0.0) * multiplier
-                idx = int(node_id)
-                if idx not in node_accumulator: node_accumulator[idx] = []
-                node_accumulator[idx].append(val)
+                if abs(val) > 1e-6:
+                    if idx not in grouped_nodes[group_key]:
+                        grouped_nodes[group_key][idx] = []
+                    grouped_nodes[group_key][idx].append(val)
+                    
+                    if idx not in grouped_nodes[global_key]:
+                        grouped_nodes[global_key][idx] = []
+                    grouped_nodes[global_key][idx].append(val)
 
-            # Edge accumulation with multiplier
-            for u, v, attrs in G.edges(data=True):
-                val = attrs.get('importance', 0.0) * multiplier
-                u, v = sorted((int(u), int(v)))
-                if (u, v) not in edge_accumulator: edge_accumulator[(u, v)] = []
-                edge_accumulator[(u, v)].append(val)
+            # --- 3. EDGES PARSING ---
+            # Trova tutti gli archi nel file alla velocità del C
+            for match in RE_EDGE.finditer(content):
+                u = int(match.group(1))
+                v = int(match.group(2))
+                val = float(match.group(3)) * multiplier
+
+                if abs(val) > 1e-6:
+                    if u > v:
+                        u, v = v, u
+
+                    edge_tuple = (u, v)
+                    if edge_tuple not in grouped_edges[group_key]:
+                        grouped_edges[group_key][edge_tuple] = []
+                    grouped_edges[group_key][edge_tuple].append(val)
+
+                    if edge_tuple not in grouped_edges[global_key]:
+                        grouped_edges[global_key][edge_tuple] = []
+                    grouped_edges[global_key][edge_tuple].append(val)
 
         except Exception as e:
             continue
 
-    print(f"Parsing completed: {valid_samples} valid graphs processed, {skipped_samples} discarded/filtered.")
-    return node_accumulator, edge_accumulator, valid_samples
+    print(f"Parsing completed: {sum(valid_samples.values())} valid graphs processed across {len(valid_samples)} groups, {skipped_samples} discarded/filtered.")
+    return grouped_nodes, grouped_edges, valid_samples
 
 # =============================================================================
 # 3. STATISTICAL AGGREGATION
@@ -438,40 +515,50 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     # 1. Parsing with new logic
-    node_acc, edge_acc, n_valid = parse_gml_files(gml_files, args.confidence_cut)
-    if n_valid == 0:
-        print("No valid graph passed the filters (confidence).")
+    grouped_nodes, grouped_edges, valid_samples = parse_gml_files(gml_files, args.confidence_cut)
+    if not valid_samples:
+        print("No valid graph passed the filters (confidence or correctness).")
         sys.exit(1)
 
-    # 2. Statistical Aggregation
-    print("\nCalculating consensus statistics...")
-    nodes_mean, nodes_perc, max_node_mean, max_node_perc = aggregate_nodes(node_acc, n_valid, args.percentile)
-    edges_mean, edges_perc, max_edge_mean, max_edge_perc = aggregate_edges(edge_acc, n_valid, args.percentile)
+    for group_key in valid_samples.keys():
+        print(f"\nProcessing Group: {group_key} (Graphs: {valid_samples[group_key]})")
+        node_acc = grouped_nodes[group_key]
+        edge_acc = grouped_edges[group_key]
+        n_valid = valid_samples[group_key]
 
-    # 3. Output Generation
-    # Adding a prefix based on the mode to avoid overwriting files if the user runs multiple scripts
-    prefix = "global_"
+        # 2. Statistical Aggregation
+        nodes_mean, nodes_perc, max_node_mean, max_node_perc = aggregate_nodes(node_acc, n_valid, args.percentile)
+        edges_mean, edges_perc, max_edge_mean, max_edge_perc = aggregate_edges(edge_acc, n_valid, args.percentile)
 
-    pdb_mean_path = os.path.join(args.out_dir, f"{prefix}nodes_mean.pdb")
-    pdb_perc_path = os.path.join(args.out_dir, f"{prefix}nodes_p{int(args.percentile)}.pdb")
-    write_colored_pdb(args.pdb_template, pdb_mean_path, nodes_mean, max_node_mean, "Mean", valid_res_indices)
-    write_colored_pdb(args.pdb_template, pdb_perc_path, nodes_perc, max_node_perc, f"Percentile_{args.percentile}", valid_res_indices)
+        # 3. Output Generation
+        if group_key == "Global":
+            current_out_dir = args.out_dir
+            prefix = "Global_"
+        else:
+            current_out_dir = os.path.join(args.out_dir, group_key)
+            os.makedirs(current_out_dir, exist_ok=True)
+            prefix = "" # No prefix needed since it's in a dedicated folder
 
-    cgo_scripts_info = []
-    top_edges = sorted(args.top_edges)
-    
-    for top_n in top_edges:
-        cgo_path = os.path.join(args.out_dir, f"{prefix}draw_edges_top{top_n}.py")
-        obj_name = f"Edges_Top_{top_n}"
-        generate_cgo_script(edges_mean, args.pdb_template, cgo_path, max_edge_mean, valid_res_indices, top_n, obj_name)
-        cgo_scripts_info.append((cgo_path, obj_name))
+        pdb_mean_path = os.path.join(current_out_dir, f"{prefix}nodes_mean.pdb")
+        pdb_perc_path = os.path.join(current_out_dir, f"{prefix}nodes_p{int(args.percentile)}.pdb")
+        write_colored_pdb(args.pdb_template, pdb_mean_path, nodes_mean, max_node_mean, f"Mean ({group_key})", valid_res_indices)
+        write_colored_pdb(args.pdb_template, pdb_perc_path, nodes_perc, max_node_perc, f"Percentile_{args.percentile} ({group_key})", valid_res_indices)
 
-    generate_master_pml(args.out_dir, pdb_mean_path, pdb_perc_path, cgo_scripts_info, args.percentile, prefix)
+        cgo_scripts_info = []
+        top_edges = sorted(args.top_edges)
+        
+        for top_n in top_edges:
+            cgo_path = os.path.join(current_out_dir, f"{prefix}draw_edges_top{top_n}.py")
+            obj_name = f"Edges_Top_{top_n}_{group_key}"
+            generate_cgo_script(edges_mean, args.pdb_template, cgo_path, max_edge_mean, valid_res_indices, top_n, obj_name)
+            cgo_scripts_info.append((cgo_path, obj_name))
 
-    # Save the CSV
-    csv_path = os.path.join(args.out_dir, f"{prefix}edges_stats_mean.csv")
-    pd.DataFrame(edges_mean).to_csv(csv_path, index=False)
-    print(f"Edge statistics exported to: {csv_path}")
+        generate_master_pml(current_out_dir, pdb_mean_path, pdb_perc_path, cgo_scripts_info, args.percentile, prefix)
+
+        # Save the CSV
+        csv_path = os.path.join(current_out_dir, f"{prefix}edges_stats_mean.csv")
+        pd.DataFrame(edges_mean).to_csv(csv_path, index=False)
+        print(f"Edge statistics exported to: {csv_path}")
 
 if __name__ == "__main__":
     main()

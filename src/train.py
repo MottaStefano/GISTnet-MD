@@ -22,6 +22,7 @@ def get_parser(show_debug=None, show_advanced=None):
     help_group.add_argument('-h', '--help', action='help', help="Show basic options and exit.")
     help_group.add_argument('--advanced-help', action='store_true', help="Show advanced optimization options.")
     help_group.add_argument('--debug-help', action='store_true', help=argparse.SUPPRESS)
+    help_group.add_argument('--restart', action='store_true', help="Resume training from the latest checkpoint if available.")
 
     io_group = parser.add_argument_group('Files and Folders', 'Input/output configuration.')
     io_group.add_argument("-c", "--config", type=str, help="Optional text file to load configuration from.")
@@ -49,6 +50,7 @@ def get_parser(show_debug=None, show_advanced=None):
     arch_group.add_argument("--patience", type=int, default=10, help="Tolerance epochs before Early Stopping.")
 
     adv_group = parser.add_argument_group('Advanced Optimization and Regularization', 'Modify only if necessary.') if show_advanced else parser
+    adv_group.add_argument("--vram_mode", type=str, choices=['standard', 'memory_saving'], default='standard', help="Optimization mode for VRAM usage." if show_advanced else argparse.SUPPRESS)
     adv_group.add_argument("--map_negative_name_to_exclude", action='store_true', help="Exclude same-group negative examples in contrastive learning." if show_advanced else argparse.SUPPRESS)
     adv_group.add_argument("--disable_preload_ram", action='store_true', help="Disable loading files into RAM." if show_advanced else argparse.SUPPRESS)
     adv_group.add_argument("--n_layers", type=int, default=3, help="Number of GNN layers." if show_advanced else argparse.SUPPRESS)
@@ -288,6 +290,9 @@ def main():
     
     # Resolution of negated flags
     args.preload_ram = not args.disable_preload_ram
+
+    if getattr(args, 'vram_mode', 'standard') == 'memory_saving':
+        args.use_checkpointing = True
 
     # FIX: Iniezione variabili mancanti per compatibilità con il modulo xAI_analysis
     args.global_shuffle = getattr(args, 'shuffling', 'none') == 'global'

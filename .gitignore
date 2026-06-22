@@ -14,3 +14,8 @@ venv/
 env/
 .venv/
 .ipynb_checkpoints/
+
+# ------------------------------------------
+# 2. Documentazione locale (machine-specific)
+# ------------------------------------------
+tests/HOWTO_RUN_TESTS.md

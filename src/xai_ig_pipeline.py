@@ -21,11 +21,14 @@ def get_parser(show_debug=None, show_advanced=None):
 
     help_group = parser.add_argument_group('Help')
     help_group.add_argument('-h', '--help', action='help', help="Show this help message and exit.")
+    help_group.add_argument('--restart', action='store_true', help="Skip already existing .gml files.")
 
     io_group = parser.add_argument_group('Input and Output', 'Define model sources and output destinations.')
     io_group.add_argument("-c", "--config", type=str, help="Optional text file to load configuration from.")
     io_group.add_argument("--model_dirs", nargs='+', required=False,
                           help="List of training directories containing 'best_linear_model.pt' and 'config.txt' (e.g., results_hybrid/valrep_1).")
+    io_group.add_argument("--inference_dirs", nargs='+', required=False,
+                          help="Optional paths to new simulation directories for pure inference. If provided, the script ignores validation groups and runs prediction+XAI on these new data.")
     io_group.add_argument("--out_dir", type=str, default="./xai_ig_results",
                           help="Main output directory. Results will be automatically organized into valrep subfolders.")
 
@@ -35,6 +38,7 @@ def get_parser(show_debug=None, show_advanced=None):
     ig_group.add_argument("--N_baseline_medoids", type=int, default=5,
                           help="Number of background windows (Medoids) to extract per class for the expected_gradients baseline calculation.")
     adv_group = parser.add_argument_group('Advanced Options', 'Advanced configuration flags (use --advanced-help to view).')
+    adv_group.add_argument("--vram_mode", type=str, choices=['standard', 'memory_saving'], default='standard', help="Optimization mode for VRAM usage." if show_advanced else argparse.SUPPRESS)
     adv_group.add_argument("--baseline", type=str, default="expected_gradients", choices=["thermodynamic_mean", "zero_edges", "expected_gradients"],
                           help="Metodo di baseline. 'thermodynamic_mean': stati medi di altre classi; 'zero_edges': RBF iniziali nulli; 'expected_gradients': Expected Gradients su Medoidi reali." if show_advanced else argparse.SUPPRESS)
 
@@ -83,7 +87,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # FUNZIONI PIPELINE (Generazione -> Esportazione)
 # =============================================================================
 
-def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline_type, N_baseline_medoids):
+def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline_type, N_baseline_medoids, restart=False, args=None):
     logger.info("Initializing Model and Dataset for IG Graph Generation...")
 
     val_groups = config.get('val_groups', [])
@@ -126,12 +130,22 @@ def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline
     else:
         logger.info("Using zero_edges baseline. Skipping global distribution extraction.")
 
-    ds = MDFlexibleWindowDataset(
-        config.get('data_class_dirs', config.get('data_dir')), split='val', val_groups=val_groups,
-        window_size=config.get('window', 10), window_offset=config.get('window_offset', None),
-        stride=1, logger=None, skip=0,
-        preload_ram=config.get('preload_ram', False), global_shuffle=False, window_shuffle=False
-    )
+    if getattr(args, 'inference_dirs', None):
+        logger.info(f"Inference Mode active. Explaining new data from: {args.inference_dirs}")
+        ds = MDFlexibleWindowDataset(
+            args.inference_dirs, split='all', val_groups=None,
+            window_size=config.get('window', 10), window_offset=config.get('window_offset', None),
+            stride=1, logger=None, skip=0,
+            preload_ram=config.get('preload_ram', False), global_shuffle=False, window_shuffle=False,
+            ignore_validation_logic=True
+        )
+    else:
+        ds = MDFlexibleWindowDataset(
+            config.get('data_class_dirs', config.get('data_dir')), split='val', val_groups=val_groups,
+            window_size=config.get('window', 10), window_offset=config.get('window_offset', None),
+            stride=1, logger=None, skip=0,
+            preload_ram=config.get('preload_ram', False), global_shuffle=False, window_shuffle=False
+        )
 
     if len(ds) == 0: return False
 
@@ -140,20 +154,36 @@ def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline
 
     count = 0
     for i, (batched_data, labels, groups, _, batch_paths) in enumerate(tqdm(loader, desc="Generating GMLs")):
+        if restart:
+            existing_files = glob.glob(os.path.join(out_gml_dir, f"window_{i:06d}_*.gml"))
+            if existing_files:
+                count += 1
+                continue
+
         batched_data = batched_data.to(DEVICE)
         true_label = labels[0].item()
-        target = true_label
 
-        with torch.no_grad():
-            logits = full_model(batched_data)
-            probs = torch.softmax(logits, dim=1)
+        # Inietto l'autocast qui dentro per tutto il loop se richiesto
+        autocast_dtype = torch.bfloat16 if getattr(args, 'vram_mode', 'standard') == 'memory_saving' else (torch.float16 if torch.cuda.is_available() else torch.float32)
+        # Fix per fallback sicuro a float32 se non si usa memory_saving e si è in dubbio. Siccome il resto del codice andava in float32 nativo senza autocast:
+        # Se memory_saving -> bfloat16, altrimenti -> si skippa autocast o si setta float32 (che fa nulla in autocast).
+        
+        ctx = torch.autocast(device_type=DEVICE.type, dtype=torch.bfloat16) if getattr(args, 'vram_mode', 'standard') == 'memory_saving' else torch.autocast(device_type=DEVICE.type, enabled=False)
+
+        with ctx:
+            with torch.no_grad():
+                logits = full_model(batched_data)
+                probs = torch.softmax(logits, dim=1)
 
             energy = -torch.logsumexp(logits, dim=1)
             energy_score = energy[0].item()
 
-            conf_true = probs[0, true_label].item()
+            conf_true = probs[0, true_label].item() if true_label < probs.shape[1] else 0.0
             pred_label = logits.argmax(dim=1).item()
             conf_pred = probs[0, pred_label].item()
+
+        is_inference = getattr(args, 'inference_dirs', None) is not None
+        target = pred_label if is_inference else true_label
 
         real_dist = batched_data.edge_attr.clone().detach()
         if real_dist.dim() > 1: real_dist = real_dist.squeeze()
@@ -231,7 +261,11 @@ def run_ig_generation(config, model_dir, out_gml_dir, logger, ig_steps, baseline
             'target_class_analyzed': target, 'ig_method': f'rbf_directional_{baseline_type}'
         }
 
-        class_name_true = class_labels[true_label] if true_label < len(class_labels) else f"class{true_label}"
+        if is_inference:
+            class_name_true = "unknown"
+        else:
+            class_name_true = class_labels[true_label] if true_label < len(class_labels) else f"class{true_label}"
+            
         class_name_pred = class_labels[pred_label] if pred_label < len(class_labels) else f"class{pred_label}"
         group_name = os.path.basename(os.path.dirname(batch_paths[0][0]))
 
@@ -455,7 +489,7 @@ def main():
         os.makedirs(vmd_dir, exist_ok=True)
 
         # 1. GENERATE GMLS
-        ds = run_ig_generation(config, model_dir, gml_dir, logger, args.ig_steps, args.baseline, args.N_baseline_medoids)
+        ds = run_ig_generation(config, model_dir, gml_dir, logger, args.ig_steps, args.baseline, args.N_baseline_medoids, getattr(args, 'restart', False), args)
 
         # 2. VMD EXPORT
         if ds:

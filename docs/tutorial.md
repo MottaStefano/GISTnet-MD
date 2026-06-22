@@ -6,6 +6,16 @@ This guide will walk you through a complete, realistic experiment: distinguishin
 
 ---
 
+### 📊 Dataset & Open Science
+To follow this tutorial, we will use a public, FAIR-compliant dataset of T4-Lysozyme simulations. You can download the required Molecular Dynamics trajectories directly from the repository using the reference below:
+
+> **Data Citation:** > Motta, Stefano (2026), “Molecular Dynamics Simulation of T4-Lysozyme”, Bicocca Open Archive Research Data, V2.
+> **DOI:** [10.17632/fcnkcvyxbc.2](https://doi.org/10.17632/fcnkcvyxbc.2)
+
+*Make sure to download the trajectories and organize them into the folder structure described in the next section.*
+
+---
+
 ## 1. Preparation and Prerequisites
 
 Before starting, ensure your conda environment is active:
@@ -20,13 +30,14 @@ Your data should be organized like this:
 ```text
 MD_simulations/
 ├── WT/
-│   ├── complex-dry.pdb     <-- Topology (without water/ions)
+│   ├── reference.pdb     <-- Topology (without water/ions)
 │   ├── rep_1.xtc           <-- Replica 1 trajectory
 │   ├── rep_2.xtc           
 │   └── ... rep_5.xtc
 └── L99A/
-    ├── complex-dry.pdb
+    ├── reference.pdb
     ├── rep_1.xtc
+    ├── rep_2.xtc           
     └── ... rep_5.xtc
 ```
 
@@ -36,7 +47,7 @@ MD_simulations/
 
 The first step is to convert the physical coordinates of the `.xtc` trajectories into PyTorch Geometric graphs. In these graphs, nodes are amino acids, and edges represent spatial proximity.
 
-We will use the **Center of Mass (`com`)** representation and a **10.0 Å cutoff**. We also select a specific range of residues (`1-98,100-164`) to ignore flexible, noisy tails.
+We will use the **Center of Mass (`com`)** representation and a **10.0 Å cutoff**. We also select a specific range of residues (`1-98,100-164`) to ignore the mutated residue which inclusion would make the identification of the state trivial.
 
 ```bash
 mkdir -p preprocessed_graphs/WT preprocessed_graphs/L99A

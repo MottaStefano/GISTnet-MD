@@ -192,7 +192,8 @@ class MDFlexibleWindowDataset(Dataset):
             else:
                 data = torch.load(p, weights_only=False)
 
-
+            if hasattr(data, 'edge_index') and data.edge_index is not None:
+                data.edge_index = data.edge_index.to(torch.int32)
 
             graph_list.append(data)
 

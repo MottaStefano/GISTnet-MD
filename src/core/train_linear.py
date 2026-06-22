@@ -47,6 +47,7 @@ class LinearTrainer:
         self.scheduler = scheduler
         self.scaler = scaler or GradScaler()
         self.args = args
+        self.autocast_dtype = torch.bfloat16 if getattr(self.args, 'vram_mode', 'standard') == 'memory_saving' else (torch.float16 if torch.cuda.is_available() else torch.float32)
         self.best_acc = 0.0
         self.patience_counter = 0
 
@@ -64,7 +65,7 @@ class LinearTrainer:
             labels = labels.to(self.device)
 
             self.optimizer.zero_grad()
-            with autocast(device_type=self.device.type):
+            with autocast(device_type=self.device.type, dtype=self.autocast_dtype):
                 logits = self.model(batched_data)
                 loss = self.criterion(logits, labels)
 
@@ -91,7 +92,7 @@ class LinearTrainer:
             for batched_data, labels, _, _, _ in loader:
                 batched_data = batched_data.to(self.device)
                 labels = labels.to(self.device)
-                with autocast(device_type=self.device.type):
+                with autocast(device_type=self.device.type, dtype=self.autocast_dtype):
                     logits = self.model(batched_data)
 
                 preds = logits.argmax(dim=1)
@@ -105,8 +106,24 @@ class LinearTrainer:
 
     def fit(self, train_loader, val_loader, test_loader=None):
         best_model_path = os.path.join(self.args.out_dir, "best_linear_model.pt")
+        checkpoint_path = os.path.join(self.args.out_dir, "checkpoint_linear_latest.pt")
 
-        for epoch in range(1, self.args.epochs + 1):
+        start_epoch = 1
+
+        if getattr(self.args, 'restart', False) and os.path.exists(checkpoint_path):
+            self.logger.info(f"Restart flag enabled. Loading linear probe checkpoint from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            self.best_acc = checkpoint.get('best_acc', 0.0)
+            self.patience_counter = checkpoint.get('patience_counter', 0)
+            self.history = checkpoint.get('history', {'train_loss': [], 'val_acc': []})
+            
+            if self.scheduler and 'scheduler_state_dict' in checkpoint:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        for epoch in range(start_epoch, self.args.epochs + 1):
             train_loss = self.train_epoch(train_loader, epoch)
             self.history['train_loss'].append(train_loss)
 
@@ -124,6 +141,18 @@ class LinearTrainer:
                 self.patience_counter = 0
             else:
                 self.patience_counter += 1
+
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'best_acc': self.best_acc,
+                'patience_counter': self.patience_counter,
+                'history': self.history
+            }
+            if self.scheduler:
+                checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
+            torch.save(checkpoint, checkpoint_path)
 
             self.logger.info(f"Ep {epoch} Linear: Loss {train_loss:.4f} | Val Acc: {val_acc:.2f}%{saved_str}")
 

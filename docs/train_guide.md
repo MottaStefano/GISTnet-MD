@@ -63,6 +63,9 @@ python train.py --config "results_run1/train.in"
 
 # Overwriting file settings via CLI on-the-fly:
 python train.py --config "results_run1/train.in" --epochs 100
+
+# Resuming an interrupted run from the latest checkpoint:
+python train.py --config "results_run1/train.in" --restart
 ```
 
 ---
@@ -76,6 +79,7 @@ Below are all the parameters accepted by `train.py`.
 | Keyword | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
 | **Files and Folders** | | | |
+| `--restart` | `Flag` | `False` | Resume training from the latest checkpoint if available. |
 | `-c`, `--config` | `Str` | `None` | Optional text file to load configuration from formatted as `key=value`. Ex: `train.in`. |
 | `--data_class_dirs` | `Str list` | `None` | Folder(s) containing processed .pt files. Specify one root folder per class. |
 | `--data_class_labels` | `Str list` | `None` | Human-readable names of the classes corresponding to `data_class_dirs` (e.g., "Apo" "Holo"). |
@@ -98,6 +102,7 @@ Below are all the parameters accepted by `train.py`.
 | `--linear_epochs` | `Int` | `50` | Maximum training epochs dedicated strictly to the Linear Probe classifier. |
 | `--patience` | `Int` | `10` | Tolerance epochs experiencing no validation loss improvement before triggering Early Stopping. |
 | **Advanced Optimization** *(Requires --advanced-help)* | | | |
+| `--vram_mode` | `Str` | `standard` | Optimization mode for VRAM usage. Set to `memory_saving` for very large systems to aggressively lower peak VRAM using strategies like BFloat16 and Gradient Checkpointing (at the cost of slightly slower computation times). |
 | `--map_negative_name_to_exclude` | `Flag` | `False` | Exclude same-group negative examples in contrastive learning. |
 | `--disable_preload_ram` | `Flag` | `False` | Disable loading files into RAM (useful for low memory nodes). |
 | `--n_layers` | `Int` | `3` | Number of GNN layers (iterations over the message passing mechanism). |

@@ -10,7 +10,7 @@ This guide will walk you through a complete, realistic experiment: distinguishin
 To follow this tutorial, we will use a public, FAIR-compliant dataset of T4-Lysozyme simulations. You can download the required Molecular Dynamics trajectories directly from the repository using the reference below:
 
 > **Data Citation:** > Motta, Stefano (2026), “Molecular Dynamics Simulation of T4-Lysozyme”, Bicocca Open Archive Research Data, V2.
-> **DOI:** [10.17632/fcnkcvyxbc.2](https://doi.org/10.17632/fcnkcvyxbc.2)
+> **DOI:** [10.17632/fcnkcvyxbc.1](https://doi.org/10.17632/fcnkcvyxbc.1)
 
 *Make sure to download the trajectories and organize them into the folder structure described in the next section.*
 

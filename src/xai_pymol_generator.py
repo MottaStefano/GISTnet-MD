@@ -149,6 +149,7 @@ RE_CONF_INF   = re.compile(r'confidence_pred_class\s+["\']?([-\d\.e]+)["\']?')
 # [^\]]* assicura di cercare 'importance' solo all'interno di quello specifico blocco nodo/arco
 RE_NODE = re.compile(r'node\s*\[\s*id\s+(\d+)[^\]]*?importance\s+["\']?([-\d\.e]+)["\']?')
 RE_EDGE = re.compile(r'edge\s*\[\s*source\s+(\d+)\s+target\s+(\d+)[^\]]*?importance\s+["\']?([-\d\.e]+)["\']?')
+RE_FILENAME = re.compile(r'window_\d+_([A-Za-z0-9_]+)_pred_([A-Za-z0-9_]+)_grp_')
 
 def parse_gml_files(file_list, confidence_cutoff=0.0):
     """
@@ -170,6 +171,11 @@ def parse_gml_files(file_list, confidence_cutoff=0.0):
             with open(fpath, 'r') as f:
                 content = f.read()
 
+            # Estrarre i nomi delle classi direttamente dal nome del file
+            m_fname = RE_FILENAME.search(fname)
+            true_cls_str = m_fname.group(1) if m_fname else None
+            pred_cls_str = m_fname.group(2) if m_fname else None
+
             # --- 1. METADATA PARSING ---
             if not is_inference:
                 m_true = RE_TRUE_LABEL.search(content)
@@ -185,7 +191,9 @@ def parse_gml_files(file_list, confidence_cutoff=0.0):
 
                 m_conf = RE_CONF_TRUE.search(content) or RE_CONF_PRED.search(content)
                 conf = float(m_conf.group(1)) if m_conf else 0.0
-                group_key = f"Val_TrueClass_{true_label}"
+                
+                # Usa il nome della classe estratto dal file se disponibile
+                group_key = f"Val_{true_cls_str}" if true_cls_str else f"Val_TrueClass_{true_label}"
             else:
                 m_pred = RE_PRED_LABEL.search(content)
                 if not m_pred:
@@ -194,7 +202,9 @@ def parse_gml_files(file_list, confidence_cutoff=0.0):
 
                 m_conf = RE_CONF_INF.search(content)
                 conf = float(m_conf.group(1)) if m_conf else 0.0
-                group_key = f"Inf_PredClass_{pred_label}"
+                
+                # Usa il nome della predizione estratto dal file se disponibile
+                group_key = f"Inf_{pred_cls_str}" if pred_cls_str else f"Inf_PredClass_{pred_label}"
 
             if conf < confidence_cutoff:
                 skipped_samples += 1
@@ -537,7 +547,7 @@ def main():
         else:
             current_out_dir = os.path.join(args.out_dir, group_key)
             os.makedirs(current_out_dir, exist_ok=True)
-            prefix = "" # No prefix needed since it's in a dedicated folder
+            prefix = f"{group_key}_"
 
         pdb_mean_path = os.path.join(current_out_dir, f"{prefix}nodes_mean.pdb")
         pdb_perc_path = os.path.join(current_out_dir, f"{prefix}nodes_p{int(args.percentile)}.pdb")
